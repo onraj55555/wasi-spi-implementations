@@ -1,0 +1,4 @@
+[spi]
+url = "https://github.com/onraj55555/wasi-spi/archive/refs/tags/release.tar.gz"
+sha256 = "bea31f245c4241e73d82d2326fd4cf2b49c814d573ae3dac28a10a859478b5e5"
+sha512 = "3b340c5cf5bb179057681f2780ec69d7406417e74db037a58cb9656a5e623a556015b48b608becace450c5afb52d3635d076ca066e921e007d986e9cfa3c8af4"

@@ -1,0 +1,1 @@
+- change spi get-bus function to return a string

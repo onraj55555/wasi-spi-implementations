@@ -1,0 +1,210 @@
+package wasi:spi@0.2.0;
+
+interface general {
+    variant spi-error {
+        /// SPI controller hardware fault
+        hardware-fault,
+
+        /// The full-bus/bus + CS pin is already used by another process
+        already-in-use,
+
+        /// Policy does not allow this full-bus/bus + CS pin to be used at all
+        not-allowed,
+
+        /// Operation is not supported
+        operation-not-supported,
+
+        /// The peripheral receive buffer was overrun (embedded-hal)
+        overrun,
+
+        /// Multiple devices on the SPI bus are trying to drive the chip select pin (embedded-hal)
+        mode-fault,
+
+        /// Received data does not conform to the peripheral configuration (embedded-hal)
+        frame-format,
+
+        /// An error occurred while asserting or deasserting the Chip Select pin (embedded-hal)
+        chip-select-fault,
+
+        /// When the supplied amount of data is not a multiple of the wordsize (can be more but not less, the biggest multiple will be transferred)
+        wrong-amount-of-data,
+
+        /// The peripheral itself is not enabled so cannot use 
+        not-enabled,
+	
+        /// Gets returned when a function on an invalidated resource gets called 
+        resource-invalidated,
+
+        /// Unspecified error, error message might give hints but not guaranteed
+        other(string)
+    }
+
+    /// Enum type that specifies the SPI modes
+    /// The modes specifies when datatransfer happens (rising or falling edge) and if datatransfer happens immediately when CS becomes active or after 1 clockpulse
+    /// CS active means high or low depending on the configuration of the pin
+    enum spi-mode {
+        /// Falling CLK and when CS activates
+        spi0,
+
+        /// Rising CLK
+        spi1,
+
+        /// Rising CLK and when CS activates
+        spi2,
+
+        /// Falling CLK
+        spi3
+    }
+
+    /// SPI configuration
+    record spi-config {
+        /// The bus label the SPI resouces is tied to
+        bus: string,
+        
+        /// In case of an SPI controller, this will contain the label is the CS pin
+        cs-pin: option<string>,
+        
+        /// Frequency of the clock signal, the controller will configure a frequency lower than or equal to the value
+        frequency: u64,
+
+        /// Delay between selecting the peripheral and starting the transfer, important for some ADC's and DAC's
+        transmission-delay: u64,
+
+        /// Size of the datawords that get transmitted, common values are 8, 12 and 16 bits
+        /// Maybe u64 is overkill
+        word-size: u64,
+
+        /// The SPI mode
+        mode: spi-mode,
+    }
+
+    /// Operation variants that can be used to chain operations in a transaction
+    variant operation {
+        read(u64),
+        write(list<u8>),
+        transfer(list<u8>),
+        delay(u64),
+    }
+}
+
+interface controller {
+    use general.{spi-mode, spi-config, operation, spi-error};
+
+    /// SPI controller resource
+    /// An SPI controller is a combination of an SPI bus together with a CS pin, multiple controllers on the same bus can exist
+    resource spi-controller {
+        /// Constructor function to get an spi-controller resource
+        get: static func(config: spi-config) -> result<spi-controller, spi-error>;
+
+        /// Returns the configuration of the SPI bus + CS pin this resource is tied to
+        get-config: func() -> result<spi-config, spi-error>;
+
+        /// Manually select the peripheral
+        select-chip: func() -> result<_, spi-error>;
+
+        /// Manually deselect the peripheral
+        deselect-chip: func() -> result<_, spi-error>;
+
+        /// Writes 1 word the the peripheral, automatically turning on and off the CS pin unless it is manually turned on
+        write-word: func(write: list<u8>) -> result<_, spi-error>;
+        
+        /// Writes n (determined by the amount of data supplied) words the the peripheral, automatically turning on and off the CS pin unless it is manually turned on
+        write-n-words: func(write: list<u8>) -> result<_, spi-error>;
+
+        /// Reads 1 word from the peripheral, automatically turning on and off the CS pin unless it is manually turned on
+        read-word: func() -> result<list<u8>, spi-error>;
+        
+        /// Reads n words from the peripheral, automatically turning on and off the CS pin unless it is manually turned on
+        read-n-words: func(n: u64) -> result<list<u8>, spi-error>;
+
+        /// Write and read 1 byte to and from the peripheral, manually turning on and off the CS pin unless it is manually turned on
+        transfer-word: func(write: list<u8>) -> result<list<u8>, spi-error>;
+        
+        /// Writes and reads n bytes to and from the peripheral, manually turning on and off the CS pin unless it is manually turned on
+        transfer-n-words: func(write: list<u8>) -> result<list<u8>, spi-error>;
+
+        /// Execute the list of operations in order, automatically turning on the CS pin on start and turning it off on end unless it is manually turned on
+        /// The return type will have the same structure as the operations, consisting out of a list of write/read results or SPI errors
+        /// The write/read results will respectively be the unit type (_) or a list of u8 integers representing the response of the peripheral
+        /// Example: transaction: write, read, write, read
+        /// If on the 2nd write an error occurs the result of the transaction will be as follows: _, list<u8>, spi-error
+        /// This makes debugging easier
+        transaction: func(operations: list<operation>) -> list<result<option<list<u8>>, spi-error>>;
+    }    
+}
+
+interface bus {
+    use general.{spi-mode, spi-config, operation, spi-error};
+
+    /// SPI bus resource
+    /// An SPI bus is full access to the physical MOSI/MISO/CLK pins without sharing it with other processes
+    /// To talk to peripheral devices, their CS pins will need to be activated manually by means of for example wasi:gpio digital-out-pin resources
+    resource spi-bus {
+        /// Constructor function to get an spi-bus resource
+        get: static func(config: spi-config) -> result<spi-bus, spi-error>;
+
+        /// Returns the configuration of the SPI bus this resource is tied to
+        get-config: func() -> result<spi-config, spi-error>;
+
+        /// Writes 1 word the the bus
+        write-word: func(write: list<u8>) -> result<_, spi-error>;
+    
+        /// Writes n (determined by the amount of data supplied) words the the bus
+        write-n-words: func(write: list<u8>) -> result<_, spi-error>;
+
+        /// Reads 1 word from the bus
+        read-word: func() -> result<list<u8>, spi-error>;
+    
+        /// Reads n words from the bus
+        read-n-words: func(n: u64) -> result<list<u8>, spi-error>;
+
+        /// Write and read 1 byte to and from the bus
+        transfer-word: func(write: list<u8>) -> result<list<u8>, spi-error>;
+    
+        /// Writes and reads n bytes to and from the peripheral1
+        transfer-n-words: func(write: list<u8>) -> result<list<u8>, spi-error>;
+
+        /// Execute the list of operations in order
+        /// The return type will have the same structure as the operations, consisting out of a list of write/read results or SPI errors
+        /// The write/read results will respectively be the unit type (_) or a list of u8 integers representing the response of the peripheral
+        /// Example: transaction: write, read, write, read
+        /// If on the 2nd write an error occurs the result of the transaction will be as follows: _, list<u8>, spi-error
+        /// This makes debugging easier
+        transaction: func(operations: list<operation>) -> list<result<option<list<u8>>, spi-error>>;
+    }
+}
+
+interface peripheral {
+    use general.{spi-config, spi-error};
+
+    /// SPI peripheral resource
+    /// An SPI peripheral is a device that reacts to its CS becoming active and responds to incoming bits by sending back bits to the controller device
+    resource spi-peripheral {
+        /// Constructor function to be come an SPI peripheral
+        become: static func(config: spi-config) -> result<spi-peripheral, spi-error>;
+
+        /// Returns the configuration of the spi peripheral
+        get-config: func() -> result<spi-config, spi-error>;
+
+        /// Checks if the peripheral is selected, after this function returns true, the read function 
+        is-selected: func() -> bool;
+        
+        /// If selected returns true, this function will read 1 bit from the SPI bus
+        read-bit: func() -> result<bool, spi-error>;
+
+        /// If is-selected returns true, this function will read from the SPI bus
+        read-word: func() -> result<list<u8>, spi-error>;
+        
+        /// If is-selected returns true, this function will read n words from the SPI bus
+        read-n-words: func(n: u64) -> result<list<u8>, spi-error>;
+        
+        /// If is-selected returns true, this function will write 1 bit to the SPI bus
+        write-bit: func(bit: bool) -> result<_, spi-error>;
+        
+        /// If is-selected returns true, this function will write 1 word to the SPI bus, only WORDSIZE bits will be read from the input
+        write-word: func(word: list<u8>) -> result<_, spi-error>;
+        
+        /// If is-selected returns true, this function will write n words to the SPI bus, n is determined by the size of the list
+        write-n-words: func(words: list<u8>) -> result<_, spi-error>;
+    }
+}
